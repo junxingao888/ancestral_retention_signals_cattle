@@ -1,0 +1,53 @@
+# Annotate variants with SnpEff
+# -v: verbose
+# -stats: generate HTML summary report
+
+java -Xmx50g -jar snpEff.jar \
+  -v ARS-UCD1.3.99 \
+  input.vcf.gz \
+  > annotated_snpeff.vcf \
+  -stats snpeff_summary.html
+
+# Annotate candidate regions with Ensembl VEP
+vep \
+  --cache \
+  --offline \
+  --assembly ARS-UCD1.3 \
+  --species bos_taurus \
+  --input_file candidate_regions.vcf \
+  --output_file candidate_regions_vep.txt \
+  --vcf \
+  --everything \
+  --fork 8
+
+# Extract affected gene names from VEP output
+grep -v "^#" candidate_regions_vep.txt \
+  | cut -f4 \
+  | sort | uniq > candidate_genes.txt
+
+# (optimal)Prepare gene list for DAVID, you can also do it manually online
+cp candidate_genes.txt david_input.txt
+
+library(clusterProfiler)
+library(org.Bt.eg.db)
+
+# Load genes
+genes <- read.table("candidate_genes.txt", stringsAsFactors = FALSE)$V1
+
+# Map to Entrez IDs
+gene_ids <- bitr(genes, fromType="SYMBOL", toType="ENTREZID", OrgDb=org.Bt.eg.db)
+
+# Enrichment analysis
+ego <- enrichGO(
+  gene          = gene_ids$ENTREZID,
+  OrgDb         = org.Bt.eg.db,
+  keyType       = "ENTREZID",
+  ont           = "BP",   # Biological process
+  pvalueCutoff  = 0.05,
+  readable      = TRUE
+)
+
+# Save results
+write.csv(as.data.frame(ego), "GO_BP_enrichment.csv")
+
+
