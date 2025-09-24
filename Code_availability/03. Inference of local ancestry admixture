@@ -1,0 +1,93 @@
+#!/bin/bash
+#SBATCH --job-name=loter_pipeline
+#SBATCH --time=3-0
+#SBATCH --mem=100G
+#SBATCH --cpus-per-task=16
+#SBATCH --output=loter_%j.out
+#SBATCH --error=loter_%j.err
+
+# --- Step 0. Activate environment
+source /lustre/nobackup/WUR/ABGC/gao086/loter_env/bin/activate || { echo "Failed to activate environment. Aborting."; exit 1; }
+
+# --- Step 1. Split into 50 kb windows
+split_vcf() {
+    local input_file=$1
+    local output_prefix=$2
+    local chr=$3
+    local output_dir=$4
+
+    chrom_length=$(bcftools query -f'%POS\n' "${input_file}" | tail -n 1)
+    [ -z "$chrom_length" ] && { echo "Error extracting length for $input_file"; return; }
+
+    for ((start=1; start<=chrom_length; start+=50000)); do
+        end=$((start+49999))
+        [ $end -gt $chrom_length ] && end=$chrom_length
+        out="${output_dir}/${output_prefix}.chr${chr}_${start}_${end}.vcf.gz"
+        bcftools view -r ${chr}:${start}-${end} "$input_file" -Oz -o "$out"
+        bcftools index "$out"
+    done
+}
+
+for chr in {1..29}; do
+    echo "Splitting chr$chr..."
+    outdir="loter/files/output_chr$chr"
+    mkdir -p "$outdir"
+
+    for f in loter/files/{EUT,AFT,MG,AAI}_split_by_chr/*.chr$chr.vcf.gz; do
+        prefix=$(basename "$f" .vcf.gz)
+        split_vcf "$f" "$prefix" "$chr" "$outdir"
+    done
+done
+
+# --- Step 2. Run LOTER
+for chr in {1..29}; do
+    echo "Running LOTER for chr$chr..."
+    vcf_dir="loter/files/output_chr$chr"
+    out_dir="loter/chr$chr"
+    mkdir -p "$out_dir"
+
+    for admix_vcf in ${vcf_dir}/MG.chr${chr}_*.vcf.gz; do
+        base=$(basename $admix_vcf .vcf.gz)
+        pos=${base#MG.chr${chr}_}
+
+        EUT_vcf="${vcf_dir}/EUT.chr${chr}_${pos}.vcf.gz"
+        AAI_vcf="${vcf_dir}/AAI.chr${chr}_${pos}.vcf.gz"
+
+        if [[ -f $EUT_vcf && -f $AAI_vcf ]]; then
+            loter_cli -r $EUT_vcf $AAI_vcf -a $admix_vcf -f vcf -o ${out_dir}/loter_chr${chr}_${pos}.txt -n 8 \
+              || echo "LOTER failed chr$chr $pos"
+        fi
+    done
+done
+
+# --- Step 3. Summarize to CSV
+csv_dir="loter/csv"
+mkdir -p "$csv_dir"
+
+for chr in {1..29}; do
+    out_csv="${csv_dir}/chr${chr}_ratios.csv"
+    echo "start,end,percent_0,percent_1" > $out_csv
+
+    for file in loter/chr$chr/loter_chr${chr}_*.txt; do
+        base=$(basename $file .txt)
+        pos=${base#loter_chr${chr}_}
+        start=${pos%_*}
+        end=${pos#*_}
+
+        c0=$(grep -o "0" $file | wc -l)
+        c1=$(grep -o "1" $file | wc -l)
+        total=$((c0+c1))
+        if [[ $total -eq 0 ]]; then
+            p0=0; p1=0
+        else
+            p0=$(echo "scale=4; $c0/$total*100" | bc)
+            p1=$(echo "scale=4; $c1/$total*100" | bc)
+        fi
+        echo "$start,$end,$p0,$p1" >> $out_csv
+    done
+
+    sort -t, -k1,1n $out_csv > ${csv_dir}/sorted_chr${chr}_ratios.csv
+done
+
+# --- Deactivate environment
+deactivate
