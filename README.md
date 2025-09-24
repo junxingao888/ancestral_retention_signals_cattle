@@ -7,4 +7,10 @@ The whole-genome sequences of 519 indigenous European and African cattle analyze
 
 If you have any questions about the process and article, please feel free to contact me (junxin.gao@wur.nl).
 
-# Please cite us:
+## Please cite us
+
+If you use this pipeline or data, please cite:
+
+**Gao J., et al.**  
+*Distinct adaptation and ancestral retention signals in African and European indigenous cattle genomes.*  
+*Communications Biology*, in press.
