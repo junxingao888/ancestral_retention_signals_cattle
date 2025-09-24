@@ -1,1 +1,44 @@
+Most of the data analyses were completed by standard bioinformatic tools running on the Linux system. The version and code/parameters of the main software tools are described below.
+Fastp (v0.23.4): Codes for quality control of raw data.
+This process involved filtering out low-quality reads (Phred quality score of 30 or higher), trimming reads shorter than 36 bases, correcting base errors, eliminating duplicates, and exporting the high-quality reads to output files.
+fastp -i "${input_dir}/${ SAMPLE }/RAW1.fq.gz" \
+	  -o "${output_dir}/${ SAMPLE }/${READS_1}  " \
+        -I "${input_dir}/${ SAMPLE }/RAW2.fq.gz" \
+        -O "${output_dir}/${ SAMPLE }/${READS_2}  " \
+        -q 30 -l 36 -c  -D 
+
+BWA-mem (v2-2.2.1): Code for indexing the reference genome and mapping reads.
+# ${REF} INDEX
+bwa-mem2  index  ${REF}
+# Mapping clean ${READS}
+bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem ${REF} ${READS_1} ${READS_2} > ${SAMPLE}.sam
+
+Samblaster (v0.1.26): Codes for marking duplicate reads.
+samblaster -r -i ${SAMPLE}.sam
+
+samtools (v2.9.2): Codes for sorting/index and converting to BAM.
+samtools sort -m 16G -@ {resources.cpus} -O bam ${SAMPLE}.sam > ${SAMPLE}.bam
+samtools index -@ {resources.cpus} ${SAMPLE}.bam
+
+Qualimap (v2.0): Codes for mapping quality report.
+unset DISPLAY && qualimap bamqc -bam ${SAMPLE}.bam --java-mem-size=*G -nt * -outdir ${SAMPLE}
+
+Freebayes (v1.3.1): Codes for variant calling, joint genotypes, and VCF file filtering/indexing.
+        {params.scripts_dir}/freebayes-parallel.sh <({params.scripts_dir}/fasta_generate_regions.py ${REF}.fai {params.chunksize}) * \
+        -f ${REF} \
+        --use-best-n-alleles 2 --haplotype-length 0 --ploidy 2 --min-alternate-count 2 --min-base-quality 10 --min-alternate-fraction 0.2   --min-alternate-count 2  --genotype-qualities \
+        -L ${SAMPLE.bam} | vcffilter -f 'QUAL > 20 & DP > 4' | bgzip -c > ${SAMPLE.vcf.gz}
+# Index ${SAMPLE.vcf.gz}
+tabix -p vcf ${SAMPLE.vcf.gz}
+
+vcfstats (v0.00.2019.07.10): Codes for generating variant statistics report on each chromosome.
+vcfstats --vcf ${SAMPLE.vcf} --outdir ${SAMPLE} --formula ‘chromosome in ${REF}' 
+
+VCFtools(v0.1.16): Codes for variant filtration. 
+vcftools --gzvcf ${SAMPLE} --maf 0.05 --min-meanDP 4 --max-missing 0.05 --recode 
+--recode-INFO-all --out ${SAMPLE}   
+
+Ensembl Variant Effect Predictor (v111): Codes for variant annotation.
+vep -i ${SAMPLE}  -o ${SAMPLE_ANNOTATION} --cache --species bos_taurus --assembly ${REF} 
+
 
