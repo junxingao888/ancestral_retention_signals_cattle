@@ -1,0 +1,31 @@
+# ============================
+# Fixation index (Fst) in sliding windows
+# ============================
+
+# A sliding-window approach (50 kb windows with 25 kb steps)
+# Requires two population files: pop1.list and pop2.list
+
+vcftools \
+  --gzvcf $file \
+  --weir-fst-pop pop1.list \
+  --weir-fst-pop pop2.list \
+  --fst-window-size 50000 \
+  --fst-window-step 25000 \
+  --out fst_results
+
+
+# ============================
+# Nucleotide diversity (π) in sliding windows
+# ============================
+
+# Example for one population (keep list)
+
+vcftools \
+  --gzvcf $file \
+  --keep pop1.list \
+  --window-pi 50000 \
+  --window-pi-step 25000 \
+  --out pi_pop1
+
+
+
