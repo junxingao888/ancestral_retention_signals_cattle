@@ -1,0 +1,54 @@
+#!/bin/bash
+
+# ============================
+# Population differentiation and structure
+# ============================
+
+# Input VCF file (set this before running)
+file=input.vcf.gz
+prefix=$(basename $file .vcf.gz)
+
+# --- Step 1. Convert VCF to PLINK format, LD-prune
+plink \
+  --vcf $file \
+  --make-bed \
+  --maf 0.01 \
+  --geno 0.01 \
+  --double-id \
+  --allow-extra-chr \
+  --chr-set 30 \
+  --threads 8 \
+  --indep-pairwise 50 10 0.2 \
+  --out ${prefix}
+
+# --- Step 2. Extract pruned SNPs for PCA / IBS
+plink \
+  --bfile ${prefix} \
+  --double-id \
+  --allow-extra-chr \
+  --chr-set 30 \
+  --extract ${prefix}.prune.in \
+  --noweb \
+  --map3 \
+  --distance-matrix \
+  --out ${prefix}.pruned
+
+# --- Step 3. ADMIXTURE
+# ADMIXTURE does not accept non-human chromosome names.
+# Replace first column of .bim file with "0".
+awk '{$1="0"; print $0}' ${prefix}.bim > ${prefix}.bim.tmp
+mv ${prefix}.bim.tmp ${prefix}.bim
+
+for K in {1..9}; do
+  admixture --cv ${prefix}.bed $K | tee log${K}.out
+done
+
+grep CV log*.out > cv_summary.txt
+
+# --- Step 4. IBS matrix and Neighbor-Joining tree
+# The IBS matrix (from Step 2) can be read into R and used with the APE package:
+#   library(ape)
+#   ibs <- as.matrix(read.table("${prefix}.pruned.mdist"))
+#   nj_tree <- nj(as.dist(ibs))
+#   plot(nj_tree)
+# Export the tree to Newick and visualize in iTOL.
