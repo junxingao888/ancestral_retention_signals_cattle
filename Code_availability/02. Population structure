@@ -22,16 +22,14 @@ plink \
   --out ${prefix}
 
 # --- Step 2. Extract pruned SNPs for PCA / IBS
-plink \
-  --bfile ${prefix} \
-  --double-id \
+module load plink/1.9
+
+plink --bfile allchr.fixed \
   --allow-extra-chr \
-  --chr-set 30 \
-  --extract ${prefix}.prune.in \
-  --noweb \
-  --map3 \
-  --distance-matrix \
-  --out ${prefix}.pruned
+  --chr-set 29 \
+  --distance square 1-ibs \
+  --out allchr.fixed_dist
+
 
 # --- Step 3. ADMIXTURE
 # ADMIXTURE does not accept non-human chromosome names.
