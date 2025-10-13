@@ -1,0 +1,45 @@
+#!/bin/bash
+
+echo -e "Breed\tEUT_r\tAAI_r\tAFT_r" > ancestry_correlation_summary.tsv
+
+# Define paths
+MUT_DIR="/lustre/nobackup/WUR/ABGC/gao086/Final_wp2_mosaic/3/result_mut"
+AFT_DIR="/lustre/nobackup/WUR/ABGC/gao086/Final_wp2_mosaic/3/result_aft"
+
+# Loop through all breeds in MUT directory
+for file in ${MUT_DIR}/*_allchr_ancestry.csv; do
+  breed=$(basename "$file" _allchr_ancestry.csv)
+  mut_file="${MUT_DIR}/${breed}_allchr_ancestry.csv"
+  aft_file="${AFT_DIR}/${breed}_allchr_ancestry.csv"
+
+  # Skip if the paired file doesn't exist
+  [[ ! -f "$aft_file" ]] && continue
+
+  # === Step 1: join by chr,start,end ===
+  awk -F, 'NR==FNR{key=$1"_"$2"_"$3; mut[key]=$0; next}
+  NR>1{
+    key=$1"_"$2"_"$3;
+    if(key in mut){
+      print mut[key]","$4","$5","$6
+    }
+  }' "$mut_file" "$aft_file" > ${breed}_joined_fixed.tmp
+
+  # === Step 2: compute correlations ===
+  awk -F, -v b="$breed" '
+  NR>1{
+    EUT1=$4; AAI1=$5; AFT1=$6;
+    EUT2=$7; AAI2=$8; AFT2=$9;
+    eut_sum+=EUT1*EUT2; eut1sq+=EUT1^2; eut2sq+=EUT2^2;
+    aai_sum+=AAI1*AAI2; aai1sq+=AAI1^2; aai2sq+=AAI2^2;
+    aft_sum+=AFT1*AFT2; aft1sq+=AFT1^2; aft2sq+=AFT2^2;
+  }
+  END{
+    if(eut1sq>0&&eut2sq>0) eut_r=eut_sum/sqrt(eut1sq*eut2sq); else eut_r="NA";
+    if(aai1sq>0&&aai2sq>0) aai_r=aai_sum/sqrt(aai1sq*aai2sq); else aai_r="NA";
+    if(aft1sq>0&&aft2sq>0) aft_r=aft_sum/sqrt(aft1sq*aft2sq); else aft_r="NA";
+    printf("%s\t%.6f\t%.6f\t%.6f\n", b, eut_r, aai_r, aft_r);
+  }' ${breed}_joined_fixed.tmp >> ancestry_correlation_summary.tsv
+
+  # Optional cleanup
+  rm -f ${breed}_joined_fixed.tmp
+done
