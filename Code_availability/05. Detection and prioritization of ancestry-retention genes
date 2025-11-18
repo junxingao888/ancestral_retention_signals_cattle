@@ -1,0 +1,146 @@
+#!/bin/bash
+
+##############################################
+# 1. EXTRACT VARIANTS INSIDE TOP WINDOWS
+##############################################
+echo "[1/6] Extracting variants from enriched windows..."
+
+mkdir -p Variants
+
+while read BREED; do
+    for ANC in 0 1 2; do
+        echo "  - $BREED ancestry $ANC"
+
+        bedtools intersect \
+            -a ${BREED}.vcf.gz \
+            -b Windows/${BREED}_top1pct_anc${ANC}.txt \
+            > Variants/${BREED}_anc${ANC}.vcf
+    done
+done < ${BREED_LIST}
+
+
+##############################################
+# 2. ANNOTATE WITH SNPEFF & KEEP CODING VARIANTS
+##############################################
+echo "[2/6] Annotating variants with SnpEff..."
+
+mkdir -p Annot
+
+while read BREED; do
+  for ANC in 0 1 2; do
+    echo "  - Annotating $BREED ancestry $ANC"
+
+    # SnpEff annotation
+    java -Xmx16g -jar snpEff.jar ARS-UCD1.2 \
+      Variants/${BREED}_anc${ANC}.vcf \
+      > Annot/${BREED}_anc${ANC}.annot.vcf
+
+    # Keep only coding variants with impact: HIGH/MODERATE/LOW
+    java -jar snpSift.jar filter \
+      "(ANN[0].IMPACT = 'HIGH') | (ANN[0].IMPACT = 'MODERATE') | (ANN[0].IMPACT = 'LOW')" \
+      Annot/${BREED}_anc${ANC}.annot.vcf \
+      > Annot/${BREED}_anc${ANC}_coding.vcf
+  done
+done < ${BREED_LIST}
+
+
+##############################################
+# 3. EXTRACT GENES FROM ANNOTATIONS
+##############################################
+echo "[3/6] Extracting gene lists..."
+
+mkdir -p Genes
+
+cat << 'EOF' > extract_genes.py
+import sys, re
+
+breed = sys.argv[1]
+anc = sys.argv[2]
+
+infile = f"Annot/{breed}_anc{anc}_coding.vcf"
+outfile = f"Genes/{breed}_anc{anc}_genes.txt"
+
+genes = []
+with open(infile) as f:
+    for line in f:
+        if line.startswith("#"):
+            continue
+        info = line.strip().split("\t")[7]
+        # Extract Gene_Name from ANN fields
+        m = re.findall(r"Gene_Name=([^;|]+)", info)
+        genes.extend(m)
+
+# Write unique genes
+with open(outfile, "w") as out:
+    out.write("gene\tancestry\tbreed\n")
+    for g in sorted(set(genes)):
+        out.write(f"{g}\t{anc}\t{breed}\n")
+EOF
+
+while read BREED; do
+  for ANC in 0 1 2; do
+    python extract_genes.py ${BREED} ${ANC}
+  done
+done < ${BREED_LIST}
+
+
+##############################################
+# 4. IDENTIFY RECURRENT GENES ACROSS BREEDS
+##############################################
+echo "[4/6] Identifying recurrent ancestry-enriched genes..."
+
+mkdir -p Recurrent
+
+cat << 'EOF' > find_recurrent_genes.py
+import pandas as pd
+import glob
+
+# Load all gene lists
+files = glob.glob("Genes/*_genes.txt")
+df = pd.concat(pd.read_csv(f, sep="\t") for f in files)
+
+# Count number of breeds per (gene, ancestry)
+counts = df.groupby(["gene", "ancestry"]).size().reset_index(name="n")
+
+# Rules:
+#  AFT (0) & AAI (1): must appear in ≥12 African breeds
+#  EUT (2): must appear in ≥3 breeds (Egypt + Sanga + Zenga)
+rec = counts[
+    ((counts["ancestry"].isin([0,1])) & (counts["n"] >= 12)) |
+    ((counts["ancestry"] == 2) & (counts["n"] >= 3))
+]
+
+rec.to_csv("Recurrent/recurrent_genes.txt", sep="\t", index=False)
+EOF
+
+python find_recurrent_genes.py
+
+
+##############################################
+# 5. COMPUTE ALLELE FREQUENCIES (VCFtools)
+##############################################
+echo "[5/6] Computing allele frequencies for AFT, AAI, EUT..."
+
+mkdir -p AlleleFreq
+
+for grp in AFT AAI EUT; do
+    echo "  - Frequency for group $grp"
+    vcftools \
+      --gzvcf ${VCF_ALL} \
+      --keep ${grp}.txt \
+      --freq2 --max-alleles 2 \
+      --out AlleleFreq/${grp}
+done
+
+
+##############################################
+# 6. PRINT COMPLETION
+##############################################
+echo "========================================="
+echo "  PIPELINE COMPLETED SUCCESSFULLY"
+echo "========================================="
+echo "• Extracted variants:    Variants/"
+echo "• Annotated variants:    Annot/"
+echo "• Gene lists:            Genes/"
+echo "• Recurrent genes:       Recurrent/recurrent_genes.txt"
+echo "• Allele frequencies:    AlleleFreq/"
