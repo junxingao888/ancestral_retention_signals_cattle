@@ -1,0 +1,75 @@
+#!/bin/bash
+
+##############################################
+# 1. EXTRACT VARIANTS INSIDE TOP WINDOWS
+##############################################
+echo "[1/5] Extracting variants from enriched windows..."
+
+mkdir -p Variants
+
+while read BREED; do
+    for ANC in 0 1 2; do
+        echo "  - $BREED ancestry $ANC"
+
+        bedtools intersect \
+            -a ${BREED}.vcf.gz \
+            -b Windows/${BREED}_top1pct_anc${ANC}.txt \
+            > Variants/${BREED}_anc${ANC}.vcf
+    done
+done < ${BREED_LIST}
+
+
+##############################################
+# 2. ANNOTATE WITH SNPEFF & KEEP CODING VARIANTS
+##############################################
+echo "[2/5] Annotating variants with SnpEff..."
+
+mkdir -p Annot
+
+while read BREED; do
+  for ANC in 0 1 2; do
+    echo "  - Annotating $BREED ancestry $ANC"
+
+    # SnpEff annotation
+    java -Xmx16g -jar snpEff.jar ARS-UCD1.2 \
+      Variants/${BREED}_anc${ANC}.vcf \
+      > Annot/${BREED}_anc${ANC}.annot.vcf
+
+    # Keep only coding variants with impact: HIGH/MODERATE/LOW
+    java -jar snpSift.jar filter \
+      "(ANN[0].IMPACT = 'HIGH') | (ANN[0].IMPACT = 'MODERATE') | (ANN[0].IMPACT = 'LOW')" \
+      Annot/${BREED}_anc${ANC}.annot.vcf \
+      > Annot/${BREED}_anc${ANC}_coding.vcf
+  done
+done < ${BREED_LIST}
+######Compute genome-wide Fst (50-kb window, 25-kb step)
+vcftools --gzvcf merged_all_samples.vcf.gz \
+  --weir-fst-pop Mertolenga.txt \
+  --weir-fst-pop EUT.txt \
+  --fst-window-size 50000 \
+  --fst-window-step 25000 \
+  --out Mertolenga_EUT_Fst
+######Compute nucleotide diversity (π) for each
+vcftools --gzvcf merged_all_samples.vcf.gz \
+  --keep Mertolenga.txt \
+  --window-pi 50000 \
+  --window-pi-step 25000 \
+  --out pi_Mertolenga
+vcftools --gzvcf merged_all_samples.vcf.gz \
+  --keep EUT.txt \
+  --window-pi 50000 \
+  --window-pi-step 25000 \
+  --out pi_EUT
+library(dplyr)
+
+m <- read.table("pi_Mertolenga.windowed.pi", header=TRUE)
+e <- read.table("pi_EUT.windowed.pi", header=TRUE)
+
+df <- m %>%
+  inner_join(e, by=c("CHROM","BIN_START","BIN_END"), suffix=c("_Mert","_EUT")) %>%
+  mutate(
+    ratio = pi_Mert / pi_EUT,
+    neglog2 = -log2(ratio)
+  )
+
+write.table(df, "pi_ratio_Mert_vs_EUT.txt", sep="\t", row.names=FALSE, quote=FALSE)
