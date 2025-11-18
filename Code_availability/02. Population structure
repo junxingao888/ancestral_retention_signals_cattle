@@ -1,14 +1,21 @@
 #!/bin/bash
+#SBATCH --job-name=pop_structure
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
 
 # ============================
-# Population differentiation and structure
+# User settings
 # ============================
-
-# Input VCF file (set this before running)
-file=input.vcf.gz
+file=636_samples.vcf.gz
 prefix=$(basename $file .vcf.gz)
 
-# --- Step 1. Convert VCF to PLINK format, LD-prune
+module load plink/1.9
+module load vcftools
+module load admixture/1.3.0
+
+# ============================
+# 1. Convert VCF → PLINK (with QC)
+# ============================
 plink \
   --vcf $file \
   --make-bed \
@@ -18,35 +25,96 @@ plink \
   --allow-extra-chr \
   --chr-set 30 \
   --threads 8 \
-  --indep-pairwise 50 10 0.2 \
   --out ${prefix}
 
-# --- Step 2. Extract pruned SNPs for PCA / IBS
-module load plink/1.9
-
-plink --bfile allchr.fixed \
+# ============================
+# 2. LD pruning (--indep-pairwise 50 10 0.2)
+# ============================
+plink \
+  --bfile ${prefix} \
+  --indep-pairwise 50 10 0.2 \
+  --threads 8 \
   --allow-extra-chr \
-  --chr-set 29 \
+  --chr-set 30 \
+  --out ${prefix}.pruned
+
+# Extract pruned SNPs
+plink \
+  --bfile ${prefix} \
+  --extract ${prefix}.pruned.prune.in \
+  --make-bed \
+  --allow-extra-chr \
+  --chr-set 30 \
+  --threads 8 \
+  --out ${prefix}.LDpruned
+
+# ============================
+# 3. IBD estimation (PI_HAT)
+# ============================
+plink \
+  --bfile ${prefix}.LDpruned \
+  --genome \
+  --min 0 \
+  --allow-extra-chr \
+  --chr-set 30 \
+  --threads 8 \
+  --out ${prefix}.IBD
+
+# Output: ${prefix}.IBD.genome (contains PI_HAT)
+
+# ============================
+# 4. PCA (top 4 PCs)
+# ============================
+plink \
+  --bfile ${prefix}.LDpruned \
+  --pca 4 \
+  --allow-extra-chr \
+  --chr-set 30 \
+  --threads 8 \
+  --out ${prefix}.PCA
+
+# Output: ${prefix}.PCA.eigenvec
+
+# ============================
+# 5. IBS distance matrix + NJ tree
+# ============================
+plink \
+  --bfile ${prefix}.LDpruned \
   --distance square 1-ibs \
-  --out allchr.fixed_dist
+  --allow-extra-chr \
+  --chr-set 30 \
+  --threads 8 \
+  --out ${prefix}.IBS
 
+# R code for NJ tree:
+# library(ape)
+# ibs <- as.matrix(read.table("${prefix}.IBS.mdist"))
+# nj_tree <- nj(as.dist(ibs))
+# write.tree(nj_tree, file="NJ_tree.newick")
 
-# --- Step 3. ADMIXTURE
-# ADMIXTURE does not accept non-human chromosome names.
-# Replace first column of .bim file with "0".
-awk '{$1="0"; print $0}' ${prefix}.bim > ${prefix}.bim.tmp
-mv ${prefix}.bim.tmp ${prefix}.bim
+# ============================
+# 6. ADMIXTURE (K=1..8)
+# ============================
+# ADMIXTURE requires chromosome code "0"
+awk '{ $1=0; print $0 }' ${prefix}.LDpruned.bim > tmp.bim
+mv tmp.bim ${prefix}.LDpruned.bim
 
-for K in {1..9}; do
-  admixture --cv ${prefix}.bed $K | tee log${K}.out
+for K in {1..8}; do
+    admixture --cv ${prefix}.LDpruned.bed $K | tee log${K}.out
 done
 
 grep CV log*.out > cv_summary.txt
 
-# --- Step 4. IBS matrix and Neighbor-Joining tree
-# The IBS matrix (from Step 2) can be read into R and used with the APE package:
-#   library(ape)
-#   ibs <- as.matrix(read.table("${prefix}.pruned.mdist"))
-#   nj_tree <- nj(as.dist(ibs))
-#   plot(nj_tree)
-# Export the tree to Newick and visualize in iTOL.
+# ============================
+# 7. Genome-wide Fst via VCFtools
+# ============================
+# Requires two population files: pop1.txt pop2.txt
+
+vcftools \
+  --gzvcf $file \
+  --weir-fst-pop pop1.txt \
+  --weir-fst-pop pop2.txt \
+  --fst-window-size 50000 \
+  --fst-window-step 25000 \
+  --out ${prefix}.FST
+
