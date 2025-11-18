@@ -28,26 +28,5 @@ grep -v "^#" candidate_regions_vep.txt \
 # (optimal)Prepare gene list for DAVID, you can also do it manually online
 cp candidate_genes.txt david_input.txt
 
-library(clusterProfiler)
-library(org.Bt.eg.db)
-
-# Load genes
-genes <- read.table("candidate_genes.txt", stringsAsFactors = FALSE)$V1
-
-# Map to Entrez IDs
-gene_ids <- bitr(genes, fromType="SYMBOL", toType="ENTREZID", OrgDb=org.Bt.eg.db)
-
-# Enrichment analysis
-ego <- enrichGO(
-  gene          = gene_ids$ENTREZID,
-  OrgDb         = org.Bt.eg.db,
-  keyType       = "ENTREZID",
-  ont           = "BP",   # Biological process
-  pvalueCutoff  = 0.05,
-  readable      = TRUE
-)
-
-# Save results
-write.csv(as.data.frame(ego), "GO_BP_enrichment.csv")
 
 
