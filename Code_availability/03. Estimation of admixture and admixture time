@@ -94,45 +94,55 @@ echo "Finished qp3Pop."
 
 echo "[4/6] Preparing DATES input..."
 
-GENO=${OUTDIR}/${PREFIX}.geno
-SNP=${OUTDIR}/${PREFIX}.snp
-IND=${OUTDIR}/${PREFIX}.ind
+# Folder where DATES files reside
+DIR=""
+
+GENO="${DIR}/cattle.DATES.geno"
+SNP="${DIR}/cattle.DATES.snp"
+IND="${DIR}/cattle.DATES.ind"
+
+mkdir -p ${OUTDIR}/DATES
 
 
 # ============================
-# 5. Run DATES for each trio (X as TARGET)
+# 5. Run DATES for each trio (TARGET S1 S2)
 # ============================
 
 echo "[5/6] Running DATES..."
 
 while read X S1 S2; do
 
-  echo "DATES for $X using $S1 / $S2"
+    echo "Running DATES for ${X} with references ${S1} / ${S2}"
 
-  # Build DATES param file for each run
-  cat > dates.par <<EOF
+    # Build trio-specific admixlist
+    ADMIXLIST="${OUTDIR}/DATES/${X}_${S1}_${S2}.admixlist"
+    echo -e "${X}\t${S1}\t${S2}" > ${ADMIXLIST}
+
+    # Build DATES parameter file
+    cat > dates.par <<EOF
 genotypename: ${GENO}
 snpname:      ${SNP}
 indivname:    ${IND}
 
-popname: ${X}
-refpops: ${S1} ${S2}
+admixlist:    ${ADMIXLIST}
 
-mindis: 0.5
-maxdis: 1.0
-binsize: 0.005
-runmode: 1
-mincount: 5
-qbin: 10
+binsize:      0.005
+mindis:       0.5
+maxdis:       1.0
+runmode:      1
+seed:         77
+mincount:     5
 zdipcorrmode: YES
-runfit: YES
-afffit: YES
-lovalfit: 0.5
+qbin:         10
+runfit:       YES
+afffit:       YES
+lovalfit:     0.5
 EOF
 
-  DATES -p dates.par > ${OUTDIR}/DATES/${X}_${S1}_${S2}.dates.out
+    # Run DATES
+    dates -p dates.par > ${OUTDIR}/DATES/${X}_${S1}_${S2}.dates.out
 
-done < $TRIOS
+done < ${TRIOS}
 
 echo "DATES finished."
 
@@ -145,4 +155,4 @@ echo "[6/6] Pipeline completed."
 echo "f3 results in:      ${OUTDIR}/f3/"
 echo "DATES results in:   ${OUTDIR}/DATES/"
 echo "Logs in:            logs/"
-echo "Now run the R script to extract admixture times and log-transform."
+echo "Next: run the R script to extract admixture times and log-transform."
