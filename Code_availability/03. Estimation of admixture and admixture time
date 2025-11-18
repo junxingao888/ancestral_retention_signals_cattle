@@ -1,0 +1,148 @@
+#!/bin/bash
+#SBATCH --job-name=admixture_pipeline
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --time=2:00:00
+
+# ============================
+#   USER INPUTS
+# ============================
+
+# PLINK prefix of LD-pruned SNPs
+PREFIX="input_pruned"
+
+# Population trio list (X S1 S2)
+TRIOS="sample_group.txt"
+
+# Directories
+OUTDIR="Admixture_Results"
+mkdir -p ${OUTDIR}/f3 ${OUTDIR}/DATES logs
+
+module load plink
+module load admixtools         # qp3Pop, convertf
+module load dates              # DATES
+
+echo "Starting admixture pipeline..."
+echo "PLINK prefix: $PREFIX"
+echo "Trios file:   $TRIOS"
+echo "Output dir:   $OUTDIR"
+echo "=========================================="
+
+
+# ============================
+# 1. Convert PLINK → EIGENSTRAT
+# ============================
+
+echo "[1/6] Converting PLINK to EIGENSTRAT..."
+
+cat > convertf.par <<EOF
+genotypename:    ${PREFIX}.bed
+snpname:         ${PREFIX}.bim
+indivname:       ${PREFIX}.fam
+outputformat:    EIGENSTRAT
+genotypeoutname: ${OUTDIR}/${PREFIX}.geno
+snpoutname:      ${OUTDIR}/${PREFIX}.snp
+indivoutname:    ${OUTDIR}/${PREFIX}.ind
+EOF
+
+convertf -p convertf.par > logs/convertf.log
+
+
+# ============================
+# 2. Generate population trios automatically
+# ============================
+# trios.txt format:
+#    X   S1   S2
+
+echo "[2/6] Using trios file: $TRIOS"
+
+
+# ============================
+# 3. Run qp3Pop for all trios
+# ============================
+
+echo "[3/6] Running qp3Pop (f3 statistics)..."
+
+while read X S1 S2; do
+
+  echo "Processing trio: $X ; $S1 ; $S2"
+
+  # Build trio-specific popfile
+  echo -e "$X\n$S1\n$S2" > ${OUTDIR}/f3/${X}_${S1}_${S2}.pop
+
+  # Create qp3Pop parameter file
+  cat > qp3pop.par <<EOF
+genotypename: ${OUTDIR}/${PREFIX}.geno
+snpname:      ${OUTDIR}/${PREFIX}.snp
+indivname:    ${OUTDIR}/${PREFIX}.ind
+popfilename:  ${OUTDIR}/f3/${X}_${S1}_${S2}.pop
+blgsize:      0.05   # 5 cM blocks
+inbreed:      YES
+details:      YES
+EOF
+
+  qp3Pop -p qp3pop.par > ${OUTDIR}/f3/${X}_${S1}_${S2}.f3.out
+
+done < $TRIOS
+
+echo "Finished qp3Pop."
+
+
+# ============================
+# 4. Prepare DATES input
+# ============================
+
+echo "[4/6] Preparing DATES input..."
+
+GENO=${OUTDIR}/${PREFIX}.geno
+SNP=${OUTDIR}/${PREFIX}.snp
+IND=${OUTDIR}/${PREFIX}.ind
+
+
+# ============================
+# 5. Run DATES for each trio (X as TARGET)
+# ============================
+
+echo "[5/6] Running DATES..."
+
+while read X S1 S2; do
+
+  echo "DATES for $X using $S1 / $S2"
+
+  # Build DATES param file for each run
+  cat > dates.par <<EOF
+genotypename: ${GENO}
+snpname:      ${SNP}
+indivname:    ${IND}
+
+popname: ${X}
+refpops: ${S1} ${S2}
+
+mindis: 0.5
+maxdis: 1.0
+binsize: 0.005
+runmode: 1
+mincount: 5
+qbin: 10
+zdipcorrmode: YES
+runfit: YES
+afffit: YES
+lovalfit: 0.5
+EOF
+
+  DATES -p dates.par > ${OUTDIR}/DATES/${X}_${S1}_${S2}.dates.out
+
+done < $TRIOS
+
+echo "DATES finished."
+
+
+# ============================
+# 6. Summary processing hint
+# ============================
+
+echo "[6/6] Pipeline completed."
+echo "f3 results in:      ${OUTDIR}/f3/"
+echo "DATES results in:   ${OUTDIR}/DATES/"
+echo "Logs in:            logs/"
+echo "Now run the R script to extract admixture times and log-transform."
