@@ -12,4 +12,4 @@ If you use this pipeline or data, please cite:
 
 **Gao J., et al.**  
 *Distinct adaptation and ancestral retention signals in African and European indigenous cattle genomes.*  
-*Communications Biology*, in press.
+*Communications Biology*, Accepted.
