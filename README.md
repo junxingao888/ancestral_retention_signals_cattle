@@ -5,6 +5,7 @@ Domestic cattle (Bos taurus and Bos indicus) underpin food security and liveliho
 # data availability
 Population-level variant calls (VCF files) for the 636 indigenous and reference cattle analyzed in this study have been deposited in the European Variation Archive under accession PRJEB102975 (ERP184337). Whole-genome sequence data for the 519 African and European indigenous cattle analyzed in this study are available from the European Nucleotide Archive under accessions PRJEB90914 and PRJEB90816. Publicly available reference variant datasets were obtained from the 1000 Bull Genomes Project (PRJNA391427; ERZ14211345) and the African Genomic Reference Resource (PRJEB74565; Muturu). 
 Sample IDs for the ancestry reference panels (AFT, n = 34; EUT, n = 29; AFI, n = 25; AAI, n = 29) are provided in Supplementary Data 1. Supplementary Data 2 contains genome-wide haplotype-mosaic files for locus-level inspection, provided for two AFT reference configurations (N’Dama + Muturu and Muturu only). Supplementary Data 3 lists putative ancestry-retention genes together with retention rates. Supplementary Data 4 provides window-based nucleotide diversity (π) and genetic differentiation (weighted Fst) for Mertolenga and EUT populations. 
+
 If you have any questions about the process and article, please feel free to contact me (junxin.gao@wur.nl).
 
 ## Please cite us
