@@ -12,6 +12,5 @@ If you have any questions about the process and article, please feel free to con
 
 If you use this pipeline or data, please cite:
 
-**Gao J., et al.**  
-*Distinct adaptation and ancestral retention signals in African and European indigenous cattle genomes.*  
-*Communications Biology*, Accepted.
+Gao, J., Ginja, C., Liu, Y. et al. Distinct adaptation and ancestral retention signals in African and European indigenous cattle genomes. Commun Biol (2026). https://doi.org/10.1038/s42003-026-09856-9
+
